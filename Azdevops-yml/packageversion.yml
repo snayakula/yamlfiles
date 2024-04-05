@@ -1,0 +1,94 @@
+trigger: none
+name: $(Year:yyyy).$(Month).$(DayOfMonth)$(Rev:.r)
+pool:
+  vmImage: ubuntu-latest
+parameters:
+  - name: environment
+    displayName: Environment
+    type: string
+    default: stg
+    values:
+     - stg
+     - prd
+variables:
+- ${{ if eq(parameters.environment, 'stg') }}:
+  - template: template-ui-variables-stg.yml
+- ${{ if eq(parameters.environment, 'prd') }}:
+  - template: template-ui-variables-prd.yml
+
+steps:
+  - checkout: self
+    persistCredentials: true
+    clean: true
+
+  - task: PowerShell@2
+    displayName: 'Checkout branch and create new version'
+    inputs:
+      targetType: inline
+      script: |
+        $branch = "$(Build.SourceBranch)" -replace "refs/heads/"
+        git remote update
+        git fetch 
+        git checkout --track origin/$branch
+        git push origin HEAD:$branch
+        git config --global user.email "packageversion@azuredevops.com"
+        git config --global user.name "package version"
+        $year = Get-Date -Format "yyyy"
+        $month = Get-Date -Format "MM-dd.HHmm"
+        $rev = Get-Date -Format "HH:mm"
+        $major = $(major)
+        $packageVersion = "$major.$year.$month"
+        npm version $packageVersion
+  - task: Bash@3
+    displayName: 'Automatic Version Update'
+    inputs:
+      targetType: inline
+      script: |
+        git add .
+        git commit -m "CI: update packageversion [skip ci]"
+        git push
+  
+  - task: NodeTool@0
+    inputs:
+        versionSpec: '18.x'
+    displayName: 'Install Node.js'
+    env:
+        REACT_APP_URL: ${{variables.REACT_APP_URL}}
+        REACT_APP_SECRECT_KEY: ${{variables.REACT_APP_SECRECT_KEY}}
+        REACT_APP_ROLE_USER: ${{variables.REACT_APP_ROLE_USER}}
+        REACT_APP_ROLE_SU: ${{variables.REACT_APP_ROLE_SU}}
+        REACT_APP_ROLE_MANAGER: ${{variables.REACT_APP_ROLE_MANAGER}}
+        REACT_APP_ROLE_ADMIN: ${{variables.REACT_APP_ROLE_ADMIN}}
+        REACT_APP_PROXY: ${{variables.REACT_APP_PROXY}}
+        REACT_APP_CLIENT_ID: ${{variables.REACT_APP_CLIENT_ID}}
+        REACT_APP_CLIENT_SECRET: ${{variables.REACT_APP_CLIENT_SECRET}}
+
+  - script: |
+      npm install
+      npm ci && npm run build
+    displayName: 'npm install and build'
+ 
+  - task: CopyFiles@2
+    inputs:
+      SourceFolder: '$(Build.SourcesDirectory)/build'
+      contents: '**'
+      targetFolder: '$(Build.ArtifactStagingDirectory)/build'
+    displayName: 'Copy build folder'
+   
+  - task: ArchiveFiles@2
+    inputs:
+      rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/build'
+      includeRootFolder: false
+      archiveType: 'zip'
+      archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+      replaceExistingArchive: true
+    displayName: 'Archive files'
+ 
+  - task: PublishBuildArtifacts@1
+    inputs:
+      pathToPublish: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+      artifactName: 'UIBuildOutputs_${{parameters.environment}}'
+    displayName: 'Publishing artifacts'
+
+
+  
