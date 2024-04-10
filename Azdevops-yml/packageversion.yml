@@ -16,6 +16,11 @@ variables:
 - ${{ if eq(parameters.environment, 'prd') }}:
   - template: template-ui-variables-prd.yml
 
+# - name: REACT_APP_VERSION
+# - value: ''
+# - name: major
+# - value: '1'
+
 steps:
   - checkout: self
     persistCredentials: true
@@ -38,6 +43,11 @@ steps:
         $rev = Get-Date -Format "HH:mm"
         $major = $(major)
         $packageVersion = "$major.$year.$month"
+        Write-Host "##vso[task.setvariable variable=major]$major"
+        Write-Host "##vso[task.setvariable variable=minor]$year"
+        Write-Host "##vso[task.setvariable variable=patch]$month"   
+        Write-Host "##vso[task.setvariable variable=rev]$rev"
+        Write-Host "##vso[task.setvariable variable=REACT_APP_VERSION]$packageVersion"
         npm version $packageVersion
   - task: Bash@3
     displayName: 'Automatic Version Update'
