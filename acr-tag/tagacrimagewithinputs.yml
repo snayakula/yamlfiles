@@ -1,0 +1,61 @@
+name: Update Version Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version type'
+        required: true
+        default: 'minor'
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+
+jobs:
+  update_tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+
+      - name: Log in to registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get current Image tag
+        run: |
+          AzureRegistryName="imagevulacr"
+          RepositoryName="hello-world"
+          GET_TAG=$(az acr repository show-tags --name $AzureRegistryName --repository $RepositoryName  --orderby time_desc --output tsv | head -n 1)
+          CURRENT_TAG="${GET_TAG:1}"
+          IFS="." read -ra version_components <<< "$CURRENT_TAG";
+          major=${version_components[0]}
+          minor=${version_components[1]}
+          patch=${version_components[2]:-0}
+          echo "Major: $major"
+          echo "Minor: $minor"
+          echo "Patch: $patch"
+          case ${{ github.event.inputs.version }} in
+            major)
+              new_tag="v$((major + 1)).$((minor)).$((patch))"
+              ;;
+            minor)
+              new_tag="v$((major)).$((minor + 1)).$((patch))"
+              ;;
+            patch)
+              new_tag="v$v$((major)).$((minor)).$((patch + 1))"
+              ;;
+          esac
+          echo "new_tag is: $new_tag"
+          docker build -t imagevulacr.azurecr.io/hello-world:$new_tag .
+          docker push --disable-content-trust imagevulacr.azurecr.io/hello-world:$new_tag
